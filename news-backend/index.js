@@ -38,18 +38,25 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
-  'https://gathered-news.pages.dev', // Cloudflare Pages
-  'https://gathered-admin.netlify.app' // Netlify Admin
+  'https://gathered-news.pages.dev',
+  'https://gathered-admin.netlify.app'
 ];
 
-if (process.env.ALLOWED_ORIGINS) {
-  allowedOrigins.push(...process.env.ALLOWED_ORIGINS.split(','));
-}
-
-app.use(cors({
+let corsOptions = {
   origin: allowedOrigins,
   credentials: true
-}));
+};
+
+if (process.env.ALLOWED_ORIGINS) {
+  if (process.env.ALLOWED_ORIGINS === '*') {
+    console.log("⚠️ CORS: Allowing ALL origins (Wildcard Mode)");
+    corsOptions.origin = true; // Reflects the request origin (Allows all + credentials)
+  } else {
+    allowedOrigins.push(...process.env.ALLOWED_ORIGINS.split(','));
+  }
+}
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Rate Limiting
