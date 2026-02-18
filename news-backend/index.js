@@ -23,6 +23,7 @@ const PORT = process.env.PORT || 3000;
 const myCache = new NodeCache({ stdTTL: 600 }); // Cache for 10 minutes
 
 // --- Security Middleware ---
+app.set('trust proxy', 1); // Trust first proxy (Render/Cloudflare)
 app.use(helmet());
 
 // --- RSS Parser Setup ---
@@ -642,4 +643,20 @@ app.post('/api/login', (req, res) => {
   return res.status(401).json({ error: 'Invalid credentials' });
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+
+  // --- Keep-Alive for Render Free Tier ---
+  // Ping the server every 14 minutes (840000 ms) to prevent sleep
+  const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000;
+
+  if (process.env.RENDER_EXTERNAL_URL) {
+    console.log(`Using Keep-Alive for: ${process.env.RENDER_EXTERNAL_URL}`);
+
+    setInterval(() => {
+      fetch(process.env.RENDER_EXTERNAL_URL)
+        .then(res => console.log(`Keep-alive ping: ${res.status}`))
+        .catch(err => console.error(`Keep-alive error: ${err.message}`));
+    }, KEEP_ALIVE_INTERVAL);
+  }
+});
