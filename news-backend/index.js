@@ -319,6 +319,17 @@ app.get('/api/news', async (req, res) => {
   }
 });
 
+app.get('/api/news/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await db.query('SELECT * FROM news WHERE id = $1', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: "News item not found" });
+    res.json(rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/news', async (req, res) => {
   try {
     const { title, content, summary, category, tags, image_url, video_url, is_ai_generated, is_featured, is_breaking, author } = req.body;
