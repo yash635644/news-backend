@@ -210,85 +210,73 @@ app.post('/api/search', async (req, res) => {
 
     console.log(`AI Search for: "${query}"`);
 
-    // 1. GATHER CONTEXT (From Cache or Fresh)
-    // We'll search across ALL categories to find relevant news.
-    const allFeeds = await getRssFeeds();
-    const categories = Object.keys(allFeeds);
+    // 1. GATHER CONTEXT (CACHE-FIRST STRATEGY)
+    // Instead of fetching live (slow), we look at what's already in memory.
+    const categories = ['World', 'Business', 'Technology', 'Sports', 'India', 'Environment', 'Education'];
     let allArticles = [];
 
-    // Helper to fetch and parse (with timeout)
-    const fetchFeed = async (url) => {
-      try {
-        const feed = await parser.parseURL(url);
-        return feed.items.map(item => ({
-          title: item.title,
-          content: item.contentSnippet || item.content || '',
-          link: item.link,
-          pubDate: item.pubDate,
-          source: feed.title
-        }));
-      } catch (e) { return []; }
-    };
-
-    // Limit context fetching to avoid slow response (e.g., top 1 source from each category)
-    // In a real production app, this would use a vector DB or search index (Elasticsearch/Algolia).
-    // For this size, we'll fetch a subset live.
-    const contextPromises = [];
-
-    // Simple Intent Detection
-    const queryLower = query.toLowerCase();
-    const isSportsQuery = queryLower.includes('cricket') || queryLower.includes('t20') || queryLower.includes('match') || queryLower.includes('score') || queryLower.includes('cup') || queryLower.includes('sport');
-
+    // Collect articles from ALL cached categories
     categories.forEach(cat => {
-      let limit = 3; // Default
-      // Prioritize Sports feeds if query is sports-related
-      if (isSportsQuery && cat === 'Sports') limit = 10;
-
-      const urls = allFeeds[cat].slice(0, limit);
-      urls.forEach(url => contextPromises.push(fetchFeed(url)));
+      const cached = myCache.get(`feed_${cat}`);
+      if (cached) {
+        allArticles.push(...cached);
+      }
     });
 
-    const results = await Promise.all(contextPromises);
-    allArticles = results.flat();
+    // Fallback: If cache is empty (server just started), fetch 'World' live (fast fallback)
+    if (allArticles.length === 0) {
+      console.log("Cache cold. Fetching live fallback for search...");
+      const allFeeds = await getRssFeeds();
+      const urls = allFeeds['World']?.slice(0, 3) || [];
+      const promises = urls.map(async url => {
+        try {
+          const feed = await parser.parseURL(url);
+          return feed.items.map(item => ({
+            title: item.title,
+            content: item.contentSnippet || item.content || '',
+            link: item.link,
+            pubDate: item.pubDate,
+            source: feed.title,
+            category: 'World'
+          }));
+        } catch (e) { return []; }
+      });
+      const results = await Promise.all(promises);
+      allArticles = results.flat();
+    }
 
     // 2. PRE-FILTER CONTEXT (Simple Keyword Match)
-    // const queryLower = query.toLowerCase(); // Already defined above
+    const queryLower = query.toLowerCase();
 
-    // SORT BY DATE (Newest First) to ensure freshness
+    // Sort by date (Newest First)
     allArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
+    // Filter relevant articles
     const relevantArticles = allArticles.filter(a =>
-      a.title.toLowerCase().includes(queryLower) ||
-      a.content.toLowerCase().includes(queryLower)
-    ).slice(0, 15); // Top 15 matches
+      (a.title && a.title.toLowerCase().includes(queryLower)) ||
+      (a.content && a.content.toLowerCase().includes(queryLower))
+    ).slice(0, 10); // Limit to top 10 to speed up AI token processing
 
     // 3. AI GENERATION
-    // Even if no specific articles found, we let AI answer (it will use general knowledge per new prompt)
-    // But we still pass whatever we found.
     const contextString = relevantArticles.length > 0
-      ? relevantArticles.map((a, i) => `[${i + 1}] (${a.pubDate}) "${a.title}": ${a.content.substring(0, 200)}...`).join('\n')
+      ? relevantArticles.map((a, i) => `[${i + 1}] (${a.pubDate}) "${a.title}": ${a.content.substring(0, 150)}...`).join('\n')
       : "No specific recent articles found in the live feed.";
 
     const prompt = `
     You are an intelligent, engaging news analyst.
-    Current Date/Time: ${new Date().toLocaleString()}
-    User Query: "${query}"
+    Current Date: ${new Date().toLocaleString()}
+    Query: "${query}"
     
-    Verified News Context (from RSS):
+    Context:
     ${contextString}
 
     Task:
-    1. Analyze the User Query and Verified News Context.
-    2. Provide a structured response (MARKDOWN):
-       **Topic:** [Short Topic Name]
-       
-       **Latest Updates:** 
-       - [Bullet point 1]
-       - [Bullet point 2]
-       
-       **Summary:** [Concise summary]
-
-    3. If context is empty, use general knowledge but still follow the format.
+    Provide a fast, structured Markdown summary.
+    **Topic:** [Topic Name]
+    **Latest Updates:** 
+    - [Point 1]
+    - [Point 2]
+    **Summary:** [1-sentence summary]
     `;
 
     const model = ai.getGenerativeModel({ model: 'gemini-flash-latest' });
