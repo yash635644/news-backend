@@ -11,6 +11,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Parser = require('rss-parser');
 const NodeCache = require('node-cache');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 const helmet = require('helmet');
 require('dotenv').config();
 
@@ -24,6 +25,7 @@ const myCache = new NodeCache({ stdTTL: 600 }); // Cache for 10 minutes
 
 // --- Security Middleware ---
 app.set('trust proxy', 1); // Trust first proxy (Render/Cloudflare)
+app.use(compression());
 app.use(helmet());
 
 // --- RSS Parser Setup ---
