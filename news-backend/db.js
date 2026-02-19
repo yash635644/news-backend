@@ -5,7 +5,7 @@ const { Pool } = require('pg');
 // Ensure DATABASE_URL is set in .env (e.g., postgres://user:pass@ep-xyz.us-east-1.aws.neon.tech/neondb?sslmode=require)
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
+    ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') ? false : {
         rejectUnauthorized: false
     },
     max: 20, // Connection pool limit
