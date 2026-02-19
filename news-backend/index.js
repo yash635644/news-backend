@@ -28,6 +28,47 @@ app.set('trust proxy', 1); // Trust first proxy (Render/Cloudflare)
 app.use(compression());
 app.use(helmet());
 
+// --- BACKGROUND CACHE WARMING ---
+// Fetches news in the background so AI Search is always fast
+const warmCache = async () => {
+  console.log("🔥 Warming Cache...");
+  const categories = ['World', 'Business', 'Technology', 'Sports', 'India', 'Environment', 'Education'];
+  const allFeeds = await getRssFeeds();
+
+  for (const cat of categories) {
+    const urls = allFeeds[cat] || [];
+    if (urls.length === 0) continue;
+
+    // Fetch top 2 sources per category to keep cache alive
+    const selectedUrls = urls.slice(0, 2);
+    const promises = selectedUrls.map(async url => {
+      try {
+        const feed = await parser.parseURL(url);
+        return feed.items.map(item => ({
+          title: item.title,
+          // Minimal content for search index
+          content: (item.contentSnippet || item.content || '').substring(0, 500),
+          link: item.link,
+          pubDate: item.pubDate,
+          source: feed.title,
+          category: cat
+        }));
+      } catch (e) { return []; }
+    });
+
+    const results = await Promise.all(promises);
+    const articles = results.flat();
+    if (articles.length > 0) {
+      myCache.set(`feed_${cat}`, articles, 600); // 10 mins
+      console.log(`✅ Cached ${articles.length} items for ${cat}`);
+    }
+  }
+};
+
+// Start warming after 10 seconds, then every 9 minutes
+setTimeout(warmCache, 10000);
+setInterval(warmCache, 9 * 60 * 1000);
+
 // --- RSS Parser Setup ---
 const parser = new Parser({
   headers: {
