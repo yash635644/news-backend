@@ -548,6 +548,38 @@ app.get('/api/rss-feeds/health', async (req, res) => {
 });
 
 // ==========================================
+// SEO & SITEMAP ROUTES
+// ==========================================
+
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const baseUrl = process.env.CLIENT_URL || 'https://gathered-news.pages.dev';
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+
+    // Static Pages
+    const staticPages = ['/', '/category/World', '/category/Business', '/category/Technology', '/category/Sports', '/category/India'];
+    staticPages.forEach(path => {
+      xml += `  <url>\n    <loc>${baseUrl}${path}</loc>\n    <changefreq>hourly</changefreq>\n    <priority>1.0</priority>\n  </url>\n`;
+    });
+
+    // Dynamic Pages (Originals in Database)
+    const { rows } = await db.query('SELECT id, published_at FROM news ORDER BY published_at DESC LIMIT 100');
+    rows.forEach(article => {
+      const date = new Date(article.published_at).toISOString();
+      xml += `  <url>\n    <loc>${baseUrl}/article/${article.id}</loc>\n    <lastmod>${date}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
+    });
+
+    xml += `</urlset>`;
+
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+  } catch (error) {
+    res.status(500).send('Error generating sitemap');
+  }
+});
+
+// ==========================================
 // NEWSLETTER & ANALYTICS ROUTES
 // ==========================================
 
