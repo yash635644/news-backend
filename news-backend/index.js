@@ -71,6 +71,14 @@ setInterval(warmCache, 9 * 60 * 1000);
 
 // --- RSS Parser Setup ---
 const parser = new Parser({
+  customFields: {
+    item: [
+      ['media:content', 'mediaContent'],
+      ['media:thumbnail', 'mediaThumbnail'],
+      ['content:encoded', 'contentEncoded'],
+      ['description', 'description']
+    ]
+  },
   headers: {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
   },
@@ -130,18 +138,26 @@ const getRssFeeds = async () => {
 
 // --- HELPER FUNCTIONS ---
 
-const extractImage = (content, enclosure) => {
-  if (enclosure && enclosure.url && (enclosure.type?.startsWith('image') || enclosure.url?.match(/\.(jpg|jpeg|png|gif|webp)$/i))) {
-    return enclosure.url;
+const extractImage = (item) => {
+  // Check enclosure
+  if (item.enclosure && item.enclosure.url && (item.enclosure.type?.startsWith('image') || item.enclosure.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i))) {
+    return item.enclosure.url;
   }
-  if (!content) return null;
+  // Check media:content
+  if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) {
+    return item.mediaContent.$.url;
+  }
+  // Check media:thumbnail
+  if (item.mediaThumbnail && item.mediaThumbnail.$ && item.mediaThumbnail.$.url) {
+    return item.mediaThumbnail.$.url;
+  }
 
-  // Find all images in content
+  // Regex on content
+  const content = item.contentEncoded || item.content || item.description || '';
   const imgRegex = /<img[^>]+src="([^">]+)"/g;
   let match;
   while ((match = imgRegex.exec(content)) !== null) {
     const url = match[1];
-    // Skip tracking pixels, base64 data, or small icons often used in RSS
     if (url.includes('spacer') || url.includes('1x1') || url.includes('tracker') || url.startsWith('data:image')) {
       continue;
     }
@@ -150,12 +166,23 @@ const extractImage = (content, enclosure) => {
   return null;
 };
 
-const cleanSummary = (html) => {
-  if (!html) return [];
-  const text = html.replace(/<[^>]*>?/gm, '').trim();
-  const decoded = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
-  const sentences = decoded.split('. ').slice(0, 2).map(s => s.trim() + '.');
-  return sentences.length > 0 ? sentences : [decoded.substring(0, 150) + '...'];
+const cleanSummary = (item) => {
+  const rawContent = item.contentSnippet || item.contentEncoded || item.content || item.description || '';
+  if (!rawContent) return ["Read the full story at the source to learn more."];
+
+  const text = rawContent.replace(/<[^>]*>?/gm, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+
+  // Collapse whitespace
+  const cleanedText = text.replace(/\s+/g, ' ');
+
+  // Return max 50-60 words roughly
+  const words = cleanedText.split(' ');
+  if (words.length > 55) {
+    return [words.slice(0, 55).join(' ') + '...'];
+  }
+  if (cleanedText.length < 5) return ["Read the full story at the source to learn more."];
+
+  return [cleanedText];
 };
 
 // --- ROUTES ---
@@ -203,11 +230,11 @@ app.get('/api/live-feed', async (req, res) => {
 
         const cleaned = feed.items.map(item => ({
           title: item.title,
-          summary: cleanSummary(item.contentSnippet || item.content || ''),
+          summary: cleanSummary(item),
           link: item.link,
           source: sourceName,
           pubDate: item.pubDate || new Date().toISOString(),
-          imageUrl: extractImage(item.content || item['content:encoded'], item.enclosure),
+          imageUrl: extractImage(item),
           category: selectedCategory
         }));
 
