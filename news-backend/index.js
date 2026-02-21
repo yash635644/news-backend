@@ -131,13 +131,23 @@ const getRssFeeds = async () => {
 // --- HELPER FUNCTIONS ---
 
 const extractImage = (content, enclosure) => {
-  if (enclosure && enclosure.url && (enclosure.type?.startsWith('image') || enclosure.url?.match(/\.(jpg|jpeg|png|gif)$/i))) {
+  if (enclosure && enclosure.url && (enclosure.type?.startsWith('image') || enclosure.url?.match(/\.(jpg|jpeg|png|gif|webp)$/i))) {
     return enclosure.url;
   }
   if (!content) return null;
-  const imgRegex = /<img[^>]+src="([^">]+)"/;
-  const match = content.match(imgRegex);
-  return match ? match[1] : null;
+
+  // Find all images in content
+  const imgRegex = /<img[^>]+src="([^">]+)"/g;
+  let match;
+  while ((match = imgRegex.exec(content)) !== null) {
+    const url = match[1];
+    // Skip tracking pixels, base64 data, or small icons often used in RSS
+    if (url.includes('spacer') || url.includes('1x1') || url.includes('tracker') || url.startsWith('data:image')) {
+      continue;
+    }
+    return url;
+  }
+  return null;
 };
 
 const cleanSummary = (html) => {
