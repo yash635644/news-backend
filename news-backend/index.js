@@ -44,14 +44,15 @@ const warmCache = async () => {
     const promises = selectedUrls.map(async url => {
       try {
         const feed = await parser.parseURL(url);
+        const sourceName = feed.title?.split(' - ')[0]?.split(':')[0] || 'News Source';
         return feed.items.map(item => ({
           title: item.title,
-          // Minimal content for search index
-          content: (item.contentSnippet || item.content || '').substring(0, 500),
+          summary: cleanSummary(item),
           link: item.link,
-          pubDate: item.pubDate,
-          source: feed.title,
-          category: cat
+          pubDate: item.pubDate || new Date().toISOString(),
+          source: sourceName,
+          category: cat,
+          imageUrl: extractImage(item)
         }));
       } catch (e) { return []; }
     });
@@ -309,13 +310,15 @@ app.post('/api/search', async (req, res) => {
       const promises = urls.map(async url => {
         try {
           const feed = await parser.parseURL(url);
+          const sourceName = feed.title?.split(' - ')[0]?.split(':')[0] || 'News Source';
           return feed.items.map(item => ({
             title: item.title,
-            content: item.contentSnippet || item.content || '',
+            summary: cleanSummary(item),
             link: item.link,
-            pubDate: item.pubDate,
-            source: feed.title,
-            category: 'World'
+            pubDate: item.pubDate || new Date().toISOString(),
+            source: sourceName,
+            category: 'World',
+            imageUrl: extractImage(item)
           }));
         } catch (e) { return []; }
       });
@@ -330,14 +333,18 @@ app.post('/api/search', async (req, res) => {
     allArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
     // Filter relevant articles
-    const relevantArticles = allArticles.filter(a =>
-      (a.title && a.title.toLowerCase().includes(queryLower)) ||
-      (a.content && a.content.toLowerCase().includes(queryLower))
-    ).slice(0, 10); // Limit to top 10 to speed up AI token processing
+    const relevantArticles = allArticles.filter(a => {
+      const summaryText = Array.isArray(a.summary) ? a.summary.join(' ') : (a.summary || '');
+      return (a.title && a.title.toLowerCase().includes(queryLower)) ||
+        (summaryText.toLowerCase().includes(queryLower));
+    }).slice(0, 10); // Limit to top 10 to speed up AI token processing
 
     // 3. AI GENERATION
     const contextString = relevantArticles.length > 0
-      ? relevantArticles.map((a, i) => `[${i + 1}] (${a.pubDate}) "${a.title}": ${a.content.substring(0, 150)}...`).join('\n')
+      ? relevantArticles.map((a, i) => {
+        const summaryText = Array.isArray(a.summary) ? a.summary[0] : (a.summary || '');
+        return `[${i + 1}] (${a.pubDate}) "${a.title}": ${summaryText.substring(0, 150)}...`;
+      }).join('\n')
       : "No specific recent articles found in the live feed.";
 
     const prompt = `
