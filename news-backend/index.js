@@ -140,31 +140,48 @@ const getRssFeeds = async () => {
 // --- HELPER FUNCTIONS ---
 
 const extractImage = (item) => {
-  // Check enclosure
+  let imgUrl = null;
+
+  // 1. Check enclosure (Highest priority usually)
   if (item.enclosure && item.enclosure.url && (item.enclosure.type?.startsWith('image') || item.enclosure.url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i))) {
-    return item.enclosure.url;
+    imgUrl = item.enclosure.url;
   }
-  // Check media:content
-  if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) {
-    return item.mediaContent.$.url;
+  // 2. Check media:content (High Quality)
+  else if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) {
+    imgUrl = item.mediaContent.$.url;
   }
-  // Check media:thumbnail
-  if (item.mediaThumbnail && item.mediaThumbnail.$ && item.mediaThumbnail.$.url) {
-    return item.mediaThumbnail.$.url;
+  // 3. Regex on content (Fallback)
+  else {
+    const content = item.contentEncoded || item.content || item.description || '';
+    const imgRegex = /<img[^>]+src="([^">]+)"/g;
+    let match;
+    while ((match = imgRegex.exec(content)) !== null) {
+      const url = match[1];
+      if (!url.includes('spacer') && !url.includes('1x1') && !url.includes('tracker') && !url.startsWith('data:image')) {
+        imgUrl = url;
+        break; // Found first valid image
+      }
+    }
   }
 
-  // Regex on content
-  const content = item.contentEncoded || item.content || item.description || '';
-  const imgRegex = /<img[^>]+src="([^">]+)"/g;
-  let match;
-  while ((match = imgRegex.exec(content)) !== null) {
-    const url = match[1];
-    if (url.includes('spacer') || url.includes('1x1') || url.includes('tracker') || url.startsWith('data:image')) {
-      continue;
-    }
-    return url;
+  // 4. Try media:thumbnail as last resort
+  if (!imgUrl && item.mediaThumbnail && item.mediaThumbnail.$ && item.mediaThumbnail.$.url) {
+    imgUrl = item.mediaThumbnail.$.url;
   }
-  return null;
+
+  // High-Resolution Upgrades for common news providers:
+  if (imgUrl) {
+    // Reuters / Generic: Remove resize queries
+    imgUrl = imgUrl.replace(/\?width=[0-9]+/, '?width=800');
+    // BBC: Their thumbnails are tiny (240px). Force to 800px.
+    if (imgUrl.includes('ichef.bbci.co.uk')) {
+      imgUrl = imgUrl.replace(/\/news\/\d+\//, '/news/800/');
+    }
+    // Generic WP thumbnails (remove -150x150.jpg)
+    imgUrl = imgUrl.replace(/-\d+x\d+\.(jpg|png|jpeg|webp)$/i, '.$1');
+  }
+
+  return imgUrl;
 };
 
 const cleanSummary = (item) => {
@@ -302,13 +319,16 @@ app.post('/api/search', async (req, res) => {
       }
     });
 
-    // Fallback: If cache is empty (server just started), fetch 'World' live (fast fallback)
+    // Fallback: If cache is empty (server just started), fetch 'World' and 'Environment' live (fast fallback)
     if (allArticles.length === 0) {
       console.log("Cache cold. Fetching live fallback for search...");
       const allFeeds = await getRssFeeds();
-      const urls = allFeeds['World']?.slice(0, 3) || [];
-      const promises = urls.map(async url => {
+      const urlsToFetch = [...(allFeeds['World']?.slice(0, 2) || []), ...(allFeeds['Environment']?.slice(0, 1) || [])];
+
+      const promises = urlsToFetch.map(async url => {
         try {
+          // Simplistic category assignment for the fast-fallback
+          const tempCat = url.includes('climate') || url.includes('environment') ? 'Environment' : 'World';
           const feed = await parser.parseURL(url);
           const sourceName = feed.title?.split(' - ')[0]?.split(':')[0] || 'News Source';
           return feed.items.map(item => ({
@@ -317,7 +337,7 @@ app.post('/api/search', async (req, res) => {
             link: item.link,
             pubDate: item.pubDate || new Date().toISOString(),
             source: sourceName,
-            category: 'World',
+            category: tempCat,
             imageUrl: extractImage(item)
           }));
         } catch (e) { return []; }
