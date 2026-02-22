@@ -1,29 +1,31 @@
 {
-  "name": "news-backend",
+  "name": "news-client",
+  "private": true,
   "version": "1.0.0",
-  "description": "AI News Aggregator Backend API",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "cors": "^2.8.5",
-    "compression": "^1.7.4",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "express-rate-limit": "^8.2.1",
-    "helmet": "^8.1.0",
-    "node-cache": "^5.1.2",
-    "node-fetch": "^3.3.2",
-    "pg": "^8.18.0",
-    "rss-parser": "^3.13.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "date-fns": "3.3.1",
+    "lucide-react": "latest",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-helmet-async": "^2.0.5",
+    "react-hot-toast": "^2.6.0",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.30.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "@tailwindcss/postcss": "^4.2.0",
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.24",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.2.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
   }
 }
